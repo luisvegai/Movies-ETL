@@ -7,23 +7,61 @@ import pandas as pd
 import numpy as np
 import re
 import time
+import os
 
+while True:
+    file_dir = input('Enter full path of data folder: ')
+    #file_dir = 'C:/Users/JD/Desktop/Analysis Projects/Movies-ETL'
+    if os.path.exists(file_dir) == True:
+        break
+    else:
+        print("Data folder not found")
+        continue
 
-file_dir = 'C:/Users/JD/Desktop/Analysis Projects/Movies-ETL'
-
-with open(f'{file_dir}/wikipedia.movies.json', mode='r') as file:
-    wiki_movies_raw = json.load(file)
+while True:
+    try:
+        wikip_mov_json = input('Enter filename of wikipedia movies json file: ')
+        #wikipedia.movies.json
+        with open(f'{file_dir}/{wikip_mov_json}', mode='r') as file:
+            wiki_movies_raw = json.load(file)
+        break
+    except FileNotFoundError:
+        print("File not found")
+        continue
+    except (EOFError,PermissionError):
+        print("Input is required")
+        continue
 
 wiki_movies = [movie for movie in wiki_movies_raw
                if ('Director' in movie or 'Directed by' in movie)
                    and 'imdb_link' in movie
                    and 'No. of episodes' not in movie]
 
-kaggle_metadata = pd.read_csv(f'{file_dir}/movies_metadata.csv', low_memory=False)
-ratings = pd.read_csv(f'{file_dir}/ratings.csv')
+while True:
+    try:
+        mov_metadata_csv = input('Enter filename of Kaggle metadata (csv) file: ')
+        #movies_metadata.csv
+        kaggle_metadata = pd.read_csv(f'{file_dir}/{mov_metadata_csv}', low_memory=False)
+        break
+    except FileNotFoundError:
+        print("File not found")
+        continue
+    except (EOFError,PermissionError,OSError):
+        print("Input is required")
+        continue
 
-wiki_movies_df = pd.DataFrame(wiki_movies_raw)
-
+while True:
+    try:
+        ratings_csv = input('Enter filename of MovieLens Rating data (csv) file (from Kaggle): ')
+        #ratings.csv
+        ratings = pd.read_csv(f'{file_dir}/{ratings_csv}')
+        break
+    except FileNotFoundError:
+        print("File not found")
+        continue
+    except (EOFError,PermissionError,OSError):
+      print("Input is required")
+      continue
 
 
 # Create a Function to Clean the Data
@@ -67,7 +105,6 @@ def clean_movie(movie):
     change_column_name('Story by', 'Writer(s)')
     change_column_name('Theme music composer', 'Composer(s)')
     change_column_name('Written by', 'Writer(s)')
-        
 
     return movie
 
@@ -92,7 +129,6 @@ def is_not_a_string(x):
     return type(x) != str
 
 box_office = box_office.apply(lambda x: ' '.join(x) if type(x) == list else x)
-
 
 
 #Parse the Box Office Data
@@ -201,9 +237,6 @@ kaggle_metadata['release_date'] = pd.to_datetime(kaggle_metadata['release_date']
 
 ratings['timestamp'] = pd.to_datetime(ratings['timestamp'], unit='s')
 
-ratings['rating'].plot(kind='hist')
-ratings['rating'].describe()
-
 
 
 #Merge Wikipedia and Kaggle Metadata
@@ -239,9 +272,7 @@ for col in movies_df.columns:
     value_counts = movies_df[col].apply(lists_to_tuples).value_counts(dropna=False)
     num_values = len(value_counts)
     if num_values == 1:
-        print(col)
-
-movies_df['video'].value_counts(dropna=False)
+        movies_df[col].value_counts(dropna=False)
 
 movies_df = movies_df.loc[:, ['imdb_id','id','title_kaggle','original_title','tagline','belongs_to_collection','url','imdb_link',
                        'runtime','budget_kaggle','revenue','release_date_kaggle','popularity','vote_average','vote_count',
@@ -272,7 +303,9 @@ movies_df.rename({'id':'kaggle_id',
 
 #Transform and Merge Rating Data
 
-rating_counts = ratings.groupby(['movieId','rating'], as_index=False).count()                 .rename({'userId':'count'}, axis=1)                 .pivot(index='movieId',columns='rating', values='count')
+rating_counts = ratings.groupby(['movieId','rating'], as_index=False).count() \
+                .rename({'userId':'count'}, axis=1) \
+                .pivot(index='movieId',columns='rating', values='count')
 
 rating_counts.columns = ['rating_' + str(col) for col in rating_counts.columns]
 
@@ -288,12 +321,23 @@ from sqlalchemy import create_engine
 
 from config import db_password
 
-db_string = f"postgres://postgres:{db_password}@127.0.0.1:5432/movie_data"
+db_name = input('Enter postgreSQL database name to enter data: ')
+db_string = f"postgres://postgres:{db_password}@127.0.0.1:5432/{db_name}"
 
 engine = create_engine(db_string)
 
-movies_df.to_sql(name='movies', con=engine)
+print(f'Importing data to database {db_name}...')
 
+while True:
+    try:
+        movies_table = input('Enter movies table name for postgreSQL database: ')
+        movies_df.to_sql(name=movies_table, con=engine)
+        break
+    except ValueError:
+        print("Table already exist, choose another name")
+        continue
+
+print("Import of movies data to movies table completed")
 
 
 # Importing the ratings data
@@ -302,18 +346,28 @@ movies_df.to_sql(name='movies', con=engine)
 rows_imported = 0
 # get the start_time from time.time()
 start_time = time.time()
-for data in pd.read_csv(f'{file_dir}ratings.csv', chunksize=1000000):
 
-    # print out the range of rows that are being imported
-    print(f'importing rows {rows_imported} to {rows_imported + len(data)}...', end='')
+while True:
+    try:
+        ratings_table = input('Enter ratings table name for postgreSQL database: ')
 
-    data.to_sql(name='ratings', con=engine, if_exists='append')
+        for data in pd.read_csv(f'{file_dir}/{ratings_csv}', chunksize=1000000):
 
-    # increment the number of rows imported by the size of 'data'
-    rows_imported += len(data)
-    # add elapsed time to final print out
+            # print out the range of rows that are being imported
+            print(f'importing rows {rows_imported} to {rows_imported + len(data)}...', end='')
+
+            data.to_sql(name=ratings_table, con=engine, if_exists='append')
+
+            # increment the number of rows imported by the size of 'data'
+            rows_imported += len(data)
+            # add elapsed time to final print out
+            
+            
+            # print that the rows have finished importing
+            print(f'Done. {time.time() - start_time} total seconds elapsed')
+        break
+    except ValueError:
+        print("Table already exist, choose another name")
+        continue
     
-    
-    # print that the rows have finished importing
-    print(f'Done. {time.time() - start_time} total seconds elapsed')
-
+print("Import of ratings data to ratings table completed")
